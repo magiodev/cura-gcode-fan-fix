@@ -86,49 +86,50 @@ for file in *.gcode; do
     }
     {
         if ($0 ~ /^M106 S[0-9]+$/) {
-            # Found a base fan command
+            # Found a base fan command without P parameter
             split($0, arr, "S");
             base_speed = arr[2] + 0;
             
-            print $0;  # Print original M106 Sxxx command
+            # Store current line
+            current_line = $0;
+            next_line = "";
+            has_p_commands = 0;
             
-            # Read ahead to check for existing P commands
-            found_fans = "";
-            line_buffer = "";
-            p_line_count = 0;
-            
-            # Look ahead for P commands
-            while ((getline next_line) > 0) {
+            # Look ahead one line
+            if ((getline tmp) > 0) {
+                next_line = tmp;
                 if (next_line ~ /^M106 P[0-9]+ S[0-9]+$/) {
-                    split(next_line, p_arr, "[ PS]");
-                    found_fans = found_fans " " p_arr[2];
-                    p_line_count++;
-                    continue;
-                } else {
-                    line_buffer = next_buffer;
-                    next_buffer = next_line;
-                    if (p_line_count == 0) break;
-                    if (!(next_line ~ /^M106/)) break;
+                    has_p_commands = 1;
                 }
             }
             
-            # Generate missing P commands
-            for (i = 1; i <= num_fans; i++) {
-                fan_p = fan_arr[i];
-                if (index(found_fans, " " fan_p " ") == 0) {  # Fan not found
+            # Print the original command
+            print current_line;
+            
+            if (has_p_commands) {
+                # Already has P commands, print them and any subsequent ones
+                print next_line;
+                while ((getline tmp) > 0) {
+                    if (tmp ~ /^M106 P[0-9]+ S[0-9]+$/) {
+                        print tmp;
+                    } else {
+                        print tmp;
+                        break;
+                    }
+                }
+            } else {
+                # No P commands yet, generate them
+                for (i = 1; i <= num_fans; i++) {
+                    fan_p = fan_arr[i];
                     multiplier = (i <= length(multi_arr)) ? multi_arr[i] : 1.0;
                     fan_speed = int(base_speed * multiplier + 0.5);
                     if (fan_speed > 255) fan_speed = 255;  # Cap max speed at 255
-                    print "M106 P" fan_p " S" fan_speed;
+                    printf "M106 P%d S%d\n", fan_p, fan_speed;
                 }
+                if (next_line != "") print next_line;
             }
-            
-            # Print buffered non-M106 line if exists
-            if (line_buffer != "") print line_buffer;
-            if (next_buffer != "") print next_buffer;
-            
         } else {
-            print $0;  # Print other lines unchanged
+            print $0;  # Print all other lines unchanged
         }
     }' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
 
