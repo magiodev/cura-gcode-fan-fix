@@ -67,7 +67,13 @@ for file in *.gcode; do
     fi
 
     # Backup the original file if backups are enabled
-    if $ENABLE_BACKUP && [ ! -f "$backup_file" ]; then
+    if $ENABLE_BACKUP; then
+        # Find next available backup number
+        backup_num=0
+        while [ -f "${backup_file}${backup_num:+.$backup_num}" ]; do
+            backup_num=$((backup_num + 1))
+        done
+        backup_file="${backup_file}${backup_num:+.$backup_num}"
         cp "$file" "$backup_file"
         echo "Backup created: $backup_file"
     fi
