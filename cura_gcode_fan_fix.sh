@@ -86,21 +86,49 @@ for file in *.gcode; do
     }
     {
         if ($0 ~ /^M106 S[0-9]+$/) {
+            # Found a base fan command
             split($0, arr, "S");
             base_speed = arr[2] + 0;
-            delete printed_fans; # Reset tracking for each M106 command
-
-            print $0;  # Print original M106 Sxxx command first
-
+            
+            print $0;  # Print original M106 Sxxx command
+            
+            # Read ahead to check for existing P commands
+            found_fans = "";
+            line_buffer = "";
+            p_line_count = 0;
+            
+            # Look ahead for P commands
+            while ((getline next_line) > 0) {
+                if (next_line ~ /^M106 P[0-9]+ S[0-9]+$/) {
+                    split(next_line, p_arr, "[ PS]");
+                    found_fans = found_fans " " p_arr[2];
+                    p_line_count++;
+                    continue;
+                } else {
+                    line_buffer = next_buffer;
+                    next_buffer = next_line;
+                    if (p_line_count == 0) break;
+                    if (!(next_line ~ /^M106/)) break;
+                }
+            }
+            
+            # Generate missing P commands
             for (i = 1; i <= num_fans; i++) {
                 fan_p = fan_arr[i];
-                multiplier = (i <= length(multi_arr)) ? multi_arr[i] : 1.0;
-                fan_speed = int(base_speed * multiplier + 0.5);
-                if (fan_speed > 255) fan_speed = 255;  # Cap max speed at 255
-                print "M106 P" fan_p " S" fan_speed;
+                if (index(found_fans, " " fan_p " ") == 0) {  # Fan not found
+                    multiplier = (i <= length(multi_arr)) ? multi_arr[i] : 1.0;
+                    fan_speed = int(base_speed * multiplier + 0.5);
+                    if (fan_speed > 255) fan_speed = 255;  # Cap max speed at 255
+                    print "M106 P" fan_p " S" fan_speed;
+                }
             }
+            
+            # Print buffered non-M106 line if exists
+            if (line_buffer != "") print line_buffer;
+            if (next_buffer != "") print next_buffer;
+            
         } else {
-            print $0; # Print other lines unchanged
+            print $0;  # Print other lines unchanged
         }
     }' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
 
